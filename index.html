@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Batari POS - Kasir Offline Android Tablet</title>
+
+    <!-- Meta Tags for Android Tablet PWA -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0026e6">
+    <meta name="application-name" content="Batari POS">
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Alpine.js for lightweight reactivity -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        batari: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#1a3bf0',
+                            600: '#0026e6',
+                            700: '#001ec4',
+                            800: '#00179f',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar & receipt styling */
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* Thermal Printer Receipt Styles */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #printable-receipt, #printable-receipt * {
+                visibility: visible;
+            }
+            #printable-receipt {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                max-width: 58mm;
+                padding: 4mm;
+                font-family: 'Courier New', Courier, monospace;
+                font-size: 11px;
+                color: #000;
+                background: #fff;
+            }
+            @page {
+                size: auto;
+                margin: 0mm;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800 antialiased select-none h-screen flex flex-col overflow-hidden" x-data="batariApp()">
+
+    <header class="bg-batari-600 text-white shadow-md flex-none z-20">
+        <div class="px-4 py-2.5 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <!-- SVG Vector Batari Logo matching image -->
+                <div class="w-10 h-10 bg-white rounded-full p-0.5 shadow-md flex items-center justify-center flex-none">
+                    <svg viewBox="0 0 200 200" class="w-full h-full">
+                        <circle cx="100" cy="100" r="96" fill="#0026e6" />
+                        <circle cx="100" cy="100" r="88" fill="none" stroke="#ffffff" stroke-width="6" />
+                        <!-- Leaf 1 (Top) -->
+                        <path d="M 70 50 C 110 40, 145 70, 115 76 C 85 82, 70 50, 70 50 Z" fill="#ffffff" />
+                        <!-- B Shape -->
+                        <path d="M 60 36 H 120 C 150 36, 150 78, 122 80 C 155 82, 155 138, 118 138 H 60 Z M 80 54 V 120 H 115 C 130 120, 130 96, 115 96 C 95 96, 80 120, 80 120 M 80 54 H 115 C 128 54, 128 78, 115 78 C 95 78, 80 54, 80 54" fill="#ffffff" />
+                        <!-- Leaf 2 (Bottom Cutout) -->
+                        <path d="M 60 122 C 90 90, 130 95, 125 110 C 120 125, 90 138, 60 122 Z" fill="#ffffff" />
+                        <text x="100" y="162" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-weight="900" font-size="28" letter-spacing="1">Batari</text>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="font-extrabold text-lg leading-none tracking-wide">Batari Coffee & Space</h1>
+                    <span class="text-[10px] bg-batari-800 text-blue-200 px-2 py-0.5 rounded-full inline-block font-medium mt-0.5">Mode Offline POS</span>
+                </div>
+            </div>
+
+            <!-- Navigation Bar Buttons -->
+            <div class="flex items-center space-x-1 sm:space-x-2">
+                <!-- Fullscreen Toggle Button for Android Tablet -->
+                <button @click="toggleFullscreen()" class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-batari-700 text-white hover:bg-batari-800 transition flex items-center space-x-1" title="Layar Penuh">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                    <span class="hidden md:inline">Full</span>
+                </button>
+
+                <!-- PWA Install Button -->
+                <button x-show="canInstall" @click="installPwa()" class="px-2.5 py-1.5 rounded-lg text-xs font-extrabold bg-amber-400 text-slate-900 hover:bg-amber-300 transition flex items-center space-x-1 shadow animate-pulse">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    <span>Install di Tablet</span>
+                </button>
+
+                <button @click="activeTab = 'pos'" :class="activeTab === 'pos' ? 'bg-white text-batari-700 shadow' : 'text-white hover:bg-batari-500'" class="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z"></path></svg>
+                    <span class="hidden sm:inline">Kasir</span>
+                </button>
+                <button @click="activeTab = 'history'" :class="activeTab === 'history' ? 'bg-white text-batari-700 shadow' : 'text-white hover:bg-batari-500'" class="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+                    <span class="hidden sm:inline">Riwayat</span>
+                </button>
+                <button @click="activeTab = 'menu-manager'" :class="activeTab === 'menu-manager' ? 'bg-white text-batari-700 shadow' : 'text-white hover:bg-batari-500'" class="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                    <span class="hidden sm:inline">Kelola Menu</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 overflow-hidden relative">
+
+        <!-- TAB 1: KASIR / REGISTER -->
+        <div x-show="activeTab === 'pos'" class="h-full flex flex-col md:flex-row overflow-hidden">
+            
+            <!-- Left Side: Menu Grid (2/3 width on desktop, full height scroll) -->
+            <div class="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 border-r border-slate-200">
+                
+                <!-- Category Filter & Search Bar -->
+                <div class="p-3 bg-white border-b border-slate-200 space-y-2 flex-none shadow-sm">
+                    <div class="relative">
+                        <input type="text" x-model="searchQuery" placeholder="Cari menu kopi, teh, cemilan..." class="w-full pl-9 pr-4 py-2 bg-slate-100 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-batari-500 text-slate-800">
+                        <svg class="w-4 h-4 text-slate-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        <button x-show="searchQuery" @click="searchQuery = ''" class="absolute right-3 top-2.5 text-xs text-slate-400 hover:text-slate-600">✕</button>
+                    </div>
+
+                    <!-- Category Pills -->
+                    <div class="flex space-x-1.5 overflow-x-auto hide-scrollbar pb-1 pt-1">
+                        <template x-for="cat in categories" :key="cat">
+                            <button @click="selectedCategory = cat" 
+                                    :class="selectedCategory === cat ? 'bg-batari-600 text-white font-semibold shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'" 
+                                    class="px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition">
+                                <span x-text="cat"></span>
+                            </button>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Products Grid -->
+                <div class="flex-1 overflow-y-auto p-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 content-start">
+                    <template x-for="item in filteredMenuItems" :key="item.id">
+                        <div @click="addToCart(item)" class="bg-white rounded-xl p-3 border border-slate-200 shadow-sm hover:shadow-md hover:border-batari-500 transition cursor-pointer flex flex-col justify-between active:scale-95 transform duration-100 relative group">
+                            
+                            <!-- Badges -->
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 truncate max-w-[80px]" x-text="item.category"></span>
+                                <span class="text-xs font-extrabold text-batari-600 bg-blue-50 px-2 py-0.5 rounded-md" x-text="formatRupiah(item.price)"></span>
+                            </div>
+
+                            <div>
+                                <h3 class="font-bold text-slate-800 text-sm leading-tight group-hover:text-batari-600 transition" x-text="item.name"></h3>
+                            </div>
+
+                            <!-- Click to Add indicator -->
+                            <div class="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400 group-hover:text-batari-600 font-medium">
+                                <span>Tambah</span>
+                                <div class="w-5 h-5 rounded-full bg-batari-50 group-hover:bg-batari-600 group-hover:text-white flex items-center justify-center transition">
+                                    +
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Empty Search Result -->
+                    <div x-show="filteredMenuItems.length === 0" class="col-span-full py-12 text-center text-slate-400">
+                        <svg class="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 9.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <p class="text-sm font-medium">Menu tidak ditemukan</p>
+                    </div>
+                </div>
+
+                <!-- Floating Cart Bar for Mobile View -->
+                <div x-show="cart.length > 0" class="md:hidden bg-batari-700 text-white p-3 flex justify-between items-center shadow-lg border-t border-batari-800 flex-none">
+                    <div>
+                        <div class="text-xs text-blue-200" x-text="cartTotalCount() + ' Item Pesanan'"></div>
+                        <div class="text-base font-extrabold" x-text="formatRupiah(cartTotalPrice())"></div>
+                    </div>
+                    <button @click="showMobileCart = true" class="bg-white text-batari-700 px-4 py-2 rounded-xl text-xs font-extrabold shadow active:bg-blue-50">
+                        Lihat Keranjang →
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Side / Drawer: Current Order Cart Panel -->
+            <div :class="showMobileCart ? 'fixed inset-0 z-50 flex flex-col bg-white md:relative md:z-0' : 'hidden md:flex md:w-80 lg:w-96 flex-col bg-white border-l border-slate-200 h-full'">
+                
+                <!-- Cart Header -->
+                <div class="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between flex-none">
+                    <div class="flex items-center space-x-2">
+                        <svg class="w-5 h-5 text-batari-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
+                        <h2 class="font-bold text-slate-800 text-base">Pesanan Aktif</h2>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button x-show="cart.length > 0" @click="clearCart()" class="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded hover:bg-red-50">Riset</button>
+                        <button @click="showMobileCart = false" class="md:hidden text-slate-400 hover:text-slate-600 p-1">✕</button>
+                    </div>
+                </div>
+
+                <!-- Order Info Inputs (Customer Name & Type) -->
+                <div class="p-3 bg-white border-b border-slate-100 space-y-2 flex-none">
+                    <div class="grid grid-cols-3 gap-1.5">
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Kasir</label>
+                            <select x-model="cashierName" class="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-batari-500 font-medium text-slate-700">
+                                <template x-for="c in cashiers" :key="c">
+                                    <option :value="c" x-text="c"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Pemesan</label>
+                            <input type="text" x-model="customerName" placeholder="Pelanggan" class="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-batari-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Tipe</label>
+                            <select x-model="orderType" class="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-batari-500 font-medium text-slate-700">
+                                <option value="Dine-In">Dine In</option>
+                                <option value="Takeaway">Takeaway</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cart Items List -->
+                <div class="flex-1 overflow-y-auto p-3 space-y-2">
+                    <template x-for="(cartItem, index) in cart" :key="cartItem.id">
+                        <div class="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-col space-y-1.5">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h4 class="font-bold text-slate-800 text-xs" x-text="cartItem.name"></h4>
+                                    <span class="text-[11px] text-slate-500" x-text="formatRupiah(cartItem.price) + ' × ' + cartItem.qty"></span>
+                                </div>
+                                <span class="font-extrabold text-xs text-slate-800" x-text="formatRupiah(cartItem.price * cartItem.qty)"></span>
+                            </div>
+
+                            <!-- Qty Controls & Note -->
+                            <div class="flex items-center justify-between pt-1">
+                                <input type="text" x-model="cartItem.note" placeholder="Catatan (opsional)..." class="text-[11px] px-2 py-0.5 border border-slate-200 bg-white rounded w-32 focus:outline-none focus:border-batari-500">
+                                
+                                <div class="flex items-center space-x-1.5 bg-white border border-slate-200 rounded-lg p-0.5">
+                                    <button @click="updateQty(index, -1)" class="w-5 h-5 rounded flex items-center justify-center bg-slate-100 text-slate-700 font-bold hover:bg-slate-200 text-xs">-</button>
+                                    <span class="w-5 text-center font-bold text-xs" x-text="cartItem.qty"></span>
+                                    <button @click="updateQty(index, 1)" class="w-5 h-5 rounded flex items-center justify-center bg-batari-600 text-white font-bold hover:bg-batari-700 text-xs">+</button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Empty Cart Placeholder -->
+                    <div x-show="cart.length === 0" class="h-48 flex flex-col items-center justify-center text-slate-400 space-y-2">
+                        <svg class="w-12 h-12 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
+                        <p class="text-xs font-medium">Keranjang masih kosong</p>
+                    </div>
+                </div>
+
+                <!-- Cart Calculation Footer -->
+                <div class="p-3 bg-slate-50 border-t border-slate-200 space-y-2 flex-none">
+                    <div class="space-y-1 text-xs text-slate-600">
+                        <div class="flex justify-between">
+                            <span>Subtotal</span>
+                            <span class="font-medium text-slate-800" x-text="formatRupiah(cartTotalPrice())"></span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span>Diskon (Rp)</span>
+                            <input type="number" x-model.number="discount" min="0" placeholder="0" class="w-20 px-1.5 py-0.5 border border-slate-200 rounded text-right text-xs focus:ring-1 focus:ring-batari-500">
+                        </div>
+                        <div class="flex justify-between font-extrabold text-sm text-slate-900 pt-1 border-t border-slate-200">
+                            <span>Total Pembayaran</span>
+                            <span class="text-batari-600" x-text="formatRupiah(cartGrandTotal())"></span>
+                        </div>
+                    </div>
+
+                    <button @click="openCheckoutModal()" :disabled="cart.length === 0" :class="cart.length === 0 ? 'bg-slate-300 cursor-not-allowed' : 'bg-batari-600 hover:bg-batari-700 shadow-md active:scale-98'" class="w-full py-2.5 rounded-xl text-white font-bold text-sm transition flex items-center justify-center space-x-2">
+                        <span>Bayar Sekaran</span>
+                        <span x-text="'(' + cartTotalCount() + ')'"></span>
+                    </button>
+                </div>
+
+            </div>
+        </div>
+
+        <div x-show="activeTab === 'history'" class="h-full overflow-y-auto p-4 bg-slate-50">
+            <div class="max-w-4xl mx-auto space-y-4">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-800">Riwayat Transaksi Penjualan</h2>
+                        <p class="text-xs text-slate-500">Semua transaksi tersimpan secara lokal di perangkat Android ini.</p>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button @click="exportToCSV()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center space-x-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            <span>Export CSV / Excel</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- History List Table / Cards -->
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-600 text-[11px] uppercase tracking-wider font-bold border-b border-slate-200">
+                                    <th class="p-3">No. Nota</th>
+                                    <th class="p-3">Waktu</th>
+                                    <th class="p-3">Kasir</th>
+                                    <th class="p-3">Pelanggan</th>
+                                    <th class="p-3">Metode</th>
+                                    <th class="p-3 text-right">Total</th>
+                                    <th class="p-3 text-center">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 text-xs">
+                                <template x-for="trx in transactions" :key="trx.id">
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="p-3 font-mono font-semibold text-batari-600" x-text="trx.invoiceNo"></td>
+                                        <td class="p-3 text-slate-500" x-text="trx.dateTime"></td>
+                                        <td class="p-3 font-semibold text-slate-700" x-text="trx.cashierName || 'KEBOO'"></td>
+                                        <td class="p-3 font-medium text-slate-800" x-text="trx.customerName + ' (' + trx.orderType + ')'"></td>
+                                        <td class="p-3">
+                                            <span class="px-2 py-0.5 rounded text-[10px] font-bold" 
+                                                  :class="trx.paymentMethod === 'Cash' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'" 
+                                                  x-text="trx.paymentMethod"></span>
+                                        </td>
+                                        <td class="p-3 text-right font-extrabold text-slate-800" x-text="formatRupiah(trx.grandTotal)"></td>
+                                        <td class="p-3 text-center space-x-1">
+                                            <button @click="reprintReceipt(trx)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-[11px] font-medium text-slate-700">Struk</button>
+                                            <button @click="deleteTransaction(trx.id)" class="px-2 py-1 bg-red-50 hover:bg-red-100 rounded text-[11px] font-medium text-red-600">Hapus</button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div x-show="transactions.length === 0" class="p-8 text-center text-slate-400">
+                        <p class="text-sm">Belum ada transaksi hari ini.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div x-show="activeTab === 'menu-manager'" class="h-full overflow-y-auto p-4 bg-slate-50">
+            <div class="max-w-4xl mx-auto space-y-4">
+                <div class="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-800">Kelola Daftar Menu Batari</h2>
+                        <p class="text-xs text-slate-500">Tambah menu baru atau ubah harga barang</p>
+                    </div>
+                    <button @click="openAddMenuModal()" class="px-3 py-1.5 bg-batari-600 hover:bg-batari-700 text-white rounded-lg text-xs font-bold transition flex items-center space-x-1">
+                        <span>+ Tambah Menu Baru</span>
+                    </button>
+                </div>
+
+                <!-- Menu Table -->
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-600 text-[11px] uppercase tracking-wider font-bold border-b border-slate-200">
+                                    <th class="p-3">Nama Menu</th>
+                                    <th class="p-3">Kategori</th>
+                                    <th class="p-3">Harga</th>
+                                    <th class="p-3 text-center">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <template x-for="item in menuItems" :key="item.id">
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="p-3 font-bold text-slate-800" x-text="item.name"></td>
+                                        <td class="p-3 text-slate-500" x-text="item.category"></td>
+                                        <td class="p-3 font-semibold text-batari-600" x-text="formatRupiah(item.price)"></td>
+                                        <td class="p-3 text-center space-x-2">
+                                            <button @click="editMenuItem(item)" class="text-blue-600 hover:underline font-medium">Edit</button>
+                                            <button @click="deleteMenuItem(item.id)" class="text-red-500 hover:underline font-medium">Hapus</button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <div x-show="showCheckoutModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4" x-cloak>
+        <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 class="font-extrabold text-slate-800 text-lg">Selesaikan Pembayaran</h3>
+                <button @click="showCheckoutModal = false" class="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+            </div>
+
+            <!-- Grand Total Display -->
+            <div class="bg-batari-50 p-4 rounded-xl border border-batari-100 text-center">
+                <span class="text-xs text-slate-500 font-medium">Total Tagihan</span>
+                <div class="text-2xl font-black text-batari-700 mt-0.5" x-text="formatRupiah(cartGrandTotal())"></div>
+            </div>
+
+            <!-- Payment Method Tabs -->
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1.5">Metode Pembayaran</label>
+                <div class="grid grid-cols-3 gap-2">
+                    <button @click="paymentMethod = 'Cash'" :class="paymentMethod === 'Cash' ? 'bg-batari-600 text-white font-bold ring-2 ring-batari-600' : 'bg-slate-100 text-slate-700'" class="py-2 rounded-xl text-xs transition">Tunai (Cash)</button>
+                    <button @click="paymentMethod = 'QRIS'" :class="paymentMethod === 'QRIS' ? 'bg-batari-600 text-white font-bold ring-2 ring-batari-600' : 'bg-slate-100 text-slate-700'" class="py-2 rounded-xl text-xs transition">QRIS</button>
+                    <button @click="paymentMethod = 'Transfer'" :class="paymentMethod === 'Transfer' ? 'bg-batari-600 text-white font-bold ring-2 ring-batari-600' : 'bg-slate-100 text-slate-700'" class="py-2 rounded-xl text-xs transition">Transfer</button>
+                </div>
+            </div>
+
+            <!-- Cash Input Section -->
+            <div x-show="paymentMethod === 'Cash'" class="space-y-3 pt-1">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Jumlah Uang Diterima (Rp)</label>
+                    <input type="number" x-model.number="cashPaid" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-base font-bold text-slate-800 focus:ring-2 focus:ring-batari-500 focus:outline-none" placeholder="0">
+                </div>
+
+                <!-- Quick Cash Buttons -->
+                <div class="grid grid-cols-4 gap-1.5">
+                    <button @click="cashPaid = cartGrandTotal()" class="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold">Pas</button>
+                    <button @click="cashPaid = 10000" class="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold">10k</button>
+                    <button @click="cashPaid = 20000" class="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold">20k</button>
+                    <button @click="cashPaid = 50000" class="py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold">50k</button>
+                    <button @click="cashPaid = 100000" class="col-span-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold">100k</button>
+                </div>
+
+                <!-- Change calculation -->
+                <div class="flex justify-between items-center p-3 rounded-xl bg-slate-100 text-xs">
+                    <span class="font-bold text-slate-600">Uang Kembalian:</span>
+                    <span class="font-extrabold text-sm" :class="calculateChange() < 0 ? 'text-red-500' : 'text-emerald-600'" x-text="formatRupiah(calculateChange())"></span>
+                </div>
+            </div>
+
+            <!-- Submit Transaction Button -->
+            <button @click="processPayment()" :disabled="paymentMethod === 'Cash' && calculateChange() < 0" :class="(paymentMethod === 'Cash' && calculateChange() < 0) ? 'bg-slate-300 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 shadow-lg active:scale-98'" class="w-full py-3 rounded-xl text-white font-extrabold text-sm transition mt-2">
+                Konfirmasi & Cetak Struk
+            </button>
+        </div>
+    </div>
+
+    <div x-show="showReceiptModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4" x-cloak>
+        <div class="bg-white rounded-2xl max-w-xs w-full p-4 shadow-2xl space-y-4 max-h-[95vh] flex flex-col">
+            
+            <div class="flex justify-between items-center border-b pb-2 flex-none">
+                <h3 class="font-bold text-slate-800 text-sm">Struk Pembayaran</h3>
+                <button @click="showReceiptModal = false" class="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+
+            <!-- Receipt Container -->
+            <div class="flex-1 overflow-y-auto bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div id="printable-receipt" class="text-center font-mono text-[11px] text-slate-800 leading-tight space-y-2">
+                    
+                    <!-- Receipt Header -->
+                    <div class="space-y-1 border-b border-dashed border-slate-400 pb-2">
+                        <div class="font-bold text-sm tracking-widest uppercase">BATARI COFFEE & SPACE</div>
+                        <div class="text-[10px]">JL. MENTRAMAN, TALUN BLITAR</div>
+                        <div x-text="'No: ' + (currentTrx ? currentTrx.invoiceNo : '')"></div>
+                        <div x-text="currentTrx ? currentTrx.dateTime : ''"></div>
+                        <div x-text="'Kasir: ' + (currentTrx ? (currentTrx.cashierName || 'KEBOO') : '')"></div>
+                        <div x-text="'Pelanggan: ' + (currentTrx ? currentTrx.customerName : '') + ' (' + (currentTrx ? currentTrx.orderType : '') + ')'"></div>
+                    </div>
+
+                    <!-- Receipt Items -->
+                    <div class="border-b border-dashed border-slate-400 pb-2 text-left space-y-1">
+                        <template x-if="currentTrx">
+                            <template x-for="item in currentTrx.items" :key="item.id">
+                                <div>
+                                    <div class="font-bold" x-text="item.name"></div>
+                                    <div class="flex justify-between text-[10px] text-slate-600">
+                                        <span x-text="item.qty + ' x ' + formatRupiah(item.price)"></span>
+                                        <span class="font-semibold text-slate-800" x-text="formatRupiah(item.qty * item.price)"></span>
+                                    </div>
+                                    <template x-if="item.note">
+                                        <div class="text-[9px] italic text-slate-500" x-text="'* ' + item.note"></div>
+                                    </template>
+                                </div>
+                            </template>
+                        </template>
+                    </div>
+
+                    <!-- Receipt Totals -->
+                    <div class="space-y-1 text-right border-b border-dashed border-slate-400 pb-2">
+                        <div class="flex justify-between">
+                            <span>Subtotal:</span>
+                            <span x-text="formatRupiah(currentTrx ? currentTrx.subtotal : 0)"></span>
+                        </div>
+                        <template x-if="currentTrx && currentTrx.discount > 0">
+                            <div class="flex justify-between text-red-600">
+                                <span>Diskon:</span>
+                                <span x-text="'-' + formatRupiah(currentTrx.discount)"></span>
+                            </div>
+                        </template>
+                        <div class="flex justify-between font-bold text-xs pt-1">
+                            <span>TOTAL:</span>
+                            <span x-text="formatRupiah(currentTrx ? currentTrx.grandTotal : 0)"></span>
+                        </div>
+                        <div class="flex justify-between text-[10px]">
+                            <span>Bayar (<span x-text="currentTrx ? currentTrx.paymentMethod : ''"></span>):</span>
+                            <span x-text="formatRupiah(currentTrx ? currentTrx.cashPaid : 0)"></span>
+                        </div>
+                        <div class="flex justify-between text-[10px]">
+                            <span>Kembali:</span>
+                            <span x-text="formatRupiah(currentTrx ? currentTrx.change : 0)"></span>
+                        </div>
+                    </div>
+
+                    <!-- Receipt Footer -->
+                    <div class="pt-2 text-center text-[10px] space-y-1">
+                        <div>Terima Kasih Atas Kunjungan Anda!</div>
+                        <div>Follow IG @batari.coffee</div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Receipt Actions -->
+            <div class="space-y-2 flex-none">
+                <button @click="printReceipt()" class="w-full py-2 bg-batari-600 hover:bg-batari-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                    <span>Cetak Struk (Bluetooth/Thermal)</span>
+                </button>
+                <button @click="shareWhatsApp()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1">
+                    <span>Kirim Struk via WA</span>
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <div x-show="showMenuModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4" x-cloak>
+        <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center border-b pb-2">
+                <h3 class="font-bold text-slate-800 text-base" x-text="editingMenuId ? 'Edit Menu' : 'Tambah Menu Baru'"></h3>
+                <button @click="showMenuModal = false" class="text-slate-400 font-bold">✕</button>
+            </div>
+
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Nama Menu</label>
+                    <input type="text" x-model="menuForm.name" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-1 focus:ring-batari-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Kategori</label>
+                    <select x-model="menuForm.category" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-1 focus:ring-batari-500">
+                        <template x-for="cat in categories.filter(c => c !== 'Semua')" :key="cat">
+                            <option :value="cat" x-text="cat"></option>
+                        </template>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Harga (Rp)</label>
+                    <input type="number" x-model.number="menuForm.price" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-1 focus:ring-batari-500">
+                </div>
+            </div>
+
+            <button @click="saveMenuItem()" class="w-full py-2.5 bg-batari-600 hover:bg-batari-700 text-white rounded-xl text-xs font-bold transition">
+                Simpan Menu
+            </button>
+        </div>
+    </div>
+
+    <script>
+        function batariApp() {
+            return {
+                activeTab: 'pos',
+                searchQuery: '',
+                selectedCategory: 'Semua',
+                showMobileCart: false,
+                showCheckoutModal: false,
+                showReceiptModal: false,
+                showMenuModal: false,
+
+                // PWA Installation state
+                deferredPrompt: null,
+                canInstall: false,
+
+                // Cashier & Customer info
+                cashiers: ['KEBOO', 'AGUS', 'DEPHI'],
+                cashierName: 'KEBOO',
+                customerName: 'Pelanggan',
+                orderType: 'Dine-In',
+
+                // Cart state
+                cart: [],
+                discount: 0,
+                paymentMethod: 'Cash',
+                cashPaid: 0,
+
+                // Current receipt transaction model
+                currentTrx: null,
+
+                // Menu form modal state
+                editingMenuId: null,
+                menuForm: {
+                    name: '',
+                    category: 'Latte Series',
+                    price: 10000
+                },
+
+                categories: [
+                    'Semua',
+                    'Latte Series',
+                    'Americano Series',
+                    'Kopi Seduh',
+                    'Non-Coffee & Susu',
+                    'Teh & Segaran',
+                    'Makanan & Camilan'
+                ],
+
+                menuItems: [],
+                transactions: [],
+
+                init() {
+                    // Initialize PWA Service Worker & Manifest dynamically for offline capabilities
+                    this.registerPWA();
+
+                    // Listen for PWA Install Prompt
+                    window.addEventListener('beforeinstallprompt', (e) => {
+                        e.preventDefault();
+                        this.deferredPrompt = e;
+                        this.canInstall = true;
+                    });
+
+                    // Load Menu Items from localStorage or initialize defaults
+                    const savedMenu = localStorage.getItem('batari_menu_items');
+                    if (savedMenu) {
+                        this.menuItems = JSON.parse(savedMenu);
+                    } else {
+                        this.menuItems = [
+                            { id: 1, name: 'Batari Latte', category: 'Latte Series', price: 12000 },
+                            { id: 2, name: 'Coconut Latte', category: 'Latte Series', price: 12000 },
+                            { id: 3, name: 'Butterscotch Latte', category: 'Latte Series', price: 12000 },
+                            { id: 4, name: 'Coffe Latte', category: 'Latte Series', price: 12000 },
+                            { id: 5, name: 'Spanish Latte', category: 'Latte Series', price: 12000 },
+                            { id: 6, name: 'Palm Sugar Latte', category: 'Latte Series', price: 12000 },
+                            { id: 7, name: 'Dinnosaurus Latte', category: 'Latte Series', price: 10000 },
+                            
+                            { id: 8, name: 'Americano', category: 'Americano Series', price: 8000 },
+                            { id: 9, name: 'Americano Berries', category: 'Americano Series', price: 12000 },
+                            { id: 10, name: 'Americano Peach', category: 'Americano Series', price: 10000 },
+                            { id: 11, name: 'Americano Sunrise', category: 'Americano Series', price: 10000 },
+
+                            { id: 12, name: 'Tubruk Coffee', category: 'Kopi Seduh', price: 5000 },
+                            { id: 13, name: 'Tubruk Susu', category: 'Kopi Seduh', price: 7000 },
+                            { id: 14, name: 'Vietnam Drip', category: 'Kopi Seduh', price: 9000 },
+
+                            { id: 15, name: 'Matcha Latte', category: 'Non-Coffee & Susu', price: 10000 },
+                            { id: 16, name: 'Matcha Berries', category: 'Non-Coffee & Susu', price: 10000 },
+                            { id: 17, name: 'Berries Milk', category: 'Non-Coffee & Susu', price: 10000 },
+                            { id: 18, name: 'Choco Milk', category: 'Non-Coffee & Susu', price: 10000 },
+                            { id: 19, name: 'Milo Dinosaurus', category: 'Non-Coffee & Susu', price: 10000 },
+
+                            { id: 20, name: 'Berries Tea', category: 'Teh & Segaran', price: 10000 },
+                            { id: 21, name: 'Peach Tea', category: 'Teh & Segaran', price: 10000 },
+                            { id: 22, name: 'Tarik Tea', category: 'Teh & Segaran', price: 8000 },
+                            { id: 23, name: 'Lemon Tea', category: 'Teh & Segaran', price: 8000 },
+                            { id: 24, name: 'Joshua', category: 'Teh & Segaran', price: 7000 },
+                            { id: 25, name: 'Angsua', category: 'Teh & Segaran', price: 7000 },
+
+                            { id: 26, name: 'Kentang Goreng', category: 'Makanan & Camilan', price: 10000 },
+                            { id: 27, name: 'Polo Pendem', category: 'Makanan & Camilan', price: 10000 },
+                            { id: 28, name: 'Tahu Bakso', category: 'Makanan & Camilan', price: 10000 },
+                            { id: 29, name: 'Siomay Kubis', category: 'Makanan & Camilan', price: 10000 },
+                            { id: 30, name: 'Dimsum', category: 'Makanan & Camilan', price: 10000 }
+                        ];
+                        this.saveMenuToStorage();
+                    }
+
+                    // Load Transactions from localStorage
+                    const savedTrx = localStorage.getItem('batari_transactions');
+                    if (savedTrx) {
+                        this.transactions = JSON.parse(savedTrx);
+                    }
+                },
+
+                // PWA Inline Setup Function
+                registerPWA() {
+                    try {
+                        // 1. Dynamic Manifest Blob
+                        const manifest = {
+                            name: "Batari POS Kasir Offline",
+                            short_name: "Batari POS",
+                            description: "Aplikasi Kasir Batari Coffee & Space Offline Android",
+                            start_url: "./",
+                            display: "standalone",
+                            orientation: "any",
+                            background_color: "#f8fafc",
+                            theme_color: "#0026e6"
+                        };
+                        const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+                        const manifestUrl = URL.createObjectURL(manifestBlob);
+                        const link = document.createElement('link');
+                        link.rel = 'manifest';
+                        link.href = manifestUrl;
+                        document.head.appendChild(link);
+
+                        // 2. Dynamic Service Worker Blob for Offline Cache
+                        if ('serviceWorker' in navigator) {
+                            const swCode = `
+                                const CACHE_NAME = 'batari-pos-cache-v1';
+                                const urlsToCache = [
+                                    './',
+                                    'https://cdn.tailwindcss.com',
+                                    'https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js'
+                                ];
+
+                                self.addEventListener('install', (e) => {
+                                    e.waitUntil(
+                                        caches.open(CACHE_NAME).then((cache) => cache.addAll(urlsToCache))
+                                    );
+                                    self.skipWaiting();
+                                });
+
+                                self.addEventListener('activate', (e) => {
+                                    e.waitUntil(self.clients.claim());
+                                });
+
+                                self.addEventListener('fetch', (e) => {
+                                    e.respondWith(
+                                        caches.match(e.request).then((res) => {
+                                            return res || fetch(e.request).then((fetchRes) => {
+                                                return caches.open(CACHE_NAME).then((cache) => {
+                                                    if (e.request.url.startsWith('http')) {
+                                                        cache.put(e.request, fetchRes.clone());
+                                                    }
+                                                    return fetchRes;
+                                                });
+                                            });
+                                        }).catch(() => caches.match('./'))
+                                    );
+                                });
+                            `;
+                            const swBlob = new Blob([swCode], { type: 'text/javascript' });
+                            const swUrl = URL.createObjectURL(swBlob);
+                            navigator.serviceWorker.register(swUrl).catch(() => {});
+                        }
+                    } catch (e) {
+                        console.log('PWA init note:', e);
+                    }
+                },
+
+                // Install PWA to Android Home Screen
+                installPwa() {
+                    if (this.deferredPrompt) {
+                        this.deferredPrompt.prompt();
+                        this.deferredPrompt.userChoice.then((choiceResult) => {
+                            if (choiceResult.outcome === 'accepted') {
+                                this.canInstall = false;
+                            }
+                            this.deferredPrompt = null;
+                        });
+                    }
+                },
+
+                // Fullscreen toggle for Android Tablet
+                toggleFullscreen() {
+                    if (!document.fullscreenElement) {
+                        document.documentElement.requestFullscreen().catch(() => {});
+                    } else {
+                        if (document.exitFullscreen) {
+                            document.exitFullscreen();
+                        }
+                    }
+                },
+
+                // Sound Effect Generator for POS clicks/payments
+                playBeep(freq = 800, duration = 80) {
+                    try {
+                        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                        if (!AudioCtx) return;
+                        const ctx = new AudioCtx();
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.value = freq;
+                        gain.gain.value = 0.1;
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.start();
+                        setTimeout(() => {
+                            osc.stop();
+                            ctx.close();
+                        }, duration);
+                    } catch (e) {}
+                },
+
+                saveMenuToStorage() {
+                    localStorage.setItem('batari_menu_items', JSON.stringify(this.menuItems));
+                },
+
+                saveTransactionsToStorage() {
+                    localStorage.setItem('batari_transactions', JSON.stringify(this.transactions));
+                },
+
+                get filteredMenuItems() {
+                    return this.menuItems.filter(item => {
+                        const matchesCategory = this.selectedCategory === 'Semua' || item.category === this.selectedCategory;
+                        const matchesSearch = item.name.toLowerCase().includes(this.searchQuery.toLowerCase());
+                        return matchesCategory && matchesSearch;
+                    });
+                },
+
+                addToCart(item) {
+                    this.playBeep(1000, 60); // Audio beep feedback
+                    const existing = this.cart.find(c => c.id === item.id);
+                    if (existing) {
+                        existing.qty++;
+                    } else {
+                        this.cart.push({
+                            id: item.id,
+                            name: item.name,
+                            price: item.price,
+                            qty: 1,
+                            note: ''
+                        });
+                    }
+                },
+
+                updateQty(index, amount) {
+                    this.playBeep(700, 50);
+                    this.cart[index].qty += amount;
+                    if (this.cart[index].qty <= 0) {
+                        this.cart.splice(index, 1);
+                    }
+                },
+
+                clearCart() {
+                    this.cart = [];
+                    this.discount = 0;
+                    this.customerName = 'Pelanggan';
+                },
+
+                cartTotalCount() {
+                    return this.cart.reduce((sum, item) => sum + item.qty, 0);
+                },
+
+                cartTotalPrice() {
+                    return this.cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+                },
+
+                cartGrandTotal() {
+                    const total = this.cartTotalPrice() - (this.discount || 0);
+                    return total < 0 ? 0 : total;
+                },
+
+                openCheckoutModal() {
+                    if (this.cart.length === 0) return;
+                    this.cashPaid = this.cartGrandTotal();
+                    this.showCheckoutModal = true;
+                },
+
+                calculateChange() {
+                    if (this.paymentMethod !== 'Cash') return 0;
+                    return (this.cashPaid || 0) - this.cartGrandTotal();
+                },
+
+                processPayment() {
+                    this.playBeep(1200, 150); // Payment success sound
+                    const now = new Date();
+                    const dateStr = now.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                    
+                    const newTrx = {
+                        id: 'TRX-' + Date.now(),
+                        invoiceNo: 'BTR' + Math.floor(100000 + Math.random() * 900000),
+                        dateTime: dateStr,
+                        cashierName: this.cashierName || 'KEBOO',
+                        customerName: this.customerName || 'Pelanggan',
+                        orderType: this.orderType,
+                        items: JSON.parse(JSON.stringify(this.cart)),
+                        subtotal: this.cartTotalPrice(),
+                        discount: this.discount || 0,
+                        grandTotal: this.cartGrandTotal(),
+                        paymentMethod: this.paymentMethod,
+                        cashPaid: this.paymentMethod === 'Cash' ? this.cashPaid : this.cartGrandTotal(),
+                        change: this.calculateChange()
+                    };
+
+                    this.transactions.unshift(newTrx);
+                    this.saveTransactionsToStorage();
+
+                    this.currentTrx = newTrx;
+                    this.showCheckoutModal = false;
+                    this.showReceiptModal = true;
+
+                    // Clear cart after payment
+                    this.clearCart();
+                },
+
+                reprintReceipt(trx) {
+                    this.currentTrx = trx;
+                    this.showReceiptModal = true;
+                },
+
+                deleteTransaction(id) {
+                    if (confirm('Apakah Anda yakin ingin menghapus transaksi ini?')) {
+                        this.transactions = this.transactions.filter(t => t.id !== id);
+                        this.saveTransactionsToStorage();
+                    }
+                },
+
+                printReceipt() {
+                    window.print();
+                },
+
+                shareWhatsApp() {
+                    if (!this.currentTrx) return;
+                    let text = `*BATARI COFFEE & SPACE*\n`;
+                    text += `JL. MENTRAMAN, TALUN BLITAR\n`;
+                    text += `--------------------------------\n`;
+                    text += `No: ${this.currentTrx.invoiceNo}\n`;
+                    text += `Tanggal: ${this.currentTrx.dateTime}\n`;
+                    text += `Kasir: ${this.currentTrx.cashierName || 'KEBOO'}\n`;
+                    text += `Pelanggan: ${this.currentTrx.customerName} (${this.currentTrx.orderType})\n`;
+                    text += `--------------------------------\n`;
+                    this.currentTrx.items.forEach(i => {
+                        text += `${i.name} x${i.qty} = ${this.formatRupiah(i.qty * i.price)}\n`;
+                        if (i.note) text += `   * ( ${i.note} )\n`;
+                    });
+                    text += `--------------------------------\n`;
+                    text += `SUBTOTAL: ${this.formatRupiah(this.currentTrx.subtotal)}\n`;
+                    if (this.currentTrx.discount > 0) {
+                        text += `DISKON: -${this.formatRupiah(this.currentTrx.discount)}\n`;
+                    }
+                    text += `*TOTAL: ${this.formatRupiah(this.currentTrx.grandTotal)}*\n`;
+                    text += `Bayar (${this.currentTrx.paymentMethod}): ${this.formatRupiah(this.currentTrx.cashPaid)}\n`;
+                    text += `Kembali: ${this.formatRupiah(this.currentTrx.change)}\n`;
+                    text += `--------------------------------\n`;
+                    text += `Terima Kasih Atas Kunjungan Anda!\n`;
+                    text += `Follow IG @batari.coffee`;
+
+                    const encoded = encodeURIComponent(text);
+                    window.open(`https://wa.me/?text=${encoded}`, '_blank');
+                },
+
+                openAddMenuModal() {
+                    this.editingMenuId = null;
+                    this.menuForm = { name: '', category: 'Latte Series', price: 10000 };
+                    this.showMenuModal = true;
+                },
+
+                editMenuItem(item) {
+                    this.editingMenuId = item.id;
+                    this.menuForm = { name: item.name, category: item.category, price: item.price };
+                    this.showMenuModal = true;
+                },
+
+                saveMenuItem() {
+                    if (!this.menuForm.name || !this.menuForm.price) return;
+
+                    if (this.editingMenuId) {
+                        const idx = this.menuItems.findIndex(i => i.id === this.editingMenuId);
+                        if (idx !== -1) {
+                            this.menuItems[idx].name = this.menuForm.name;
+                            this.menuItems[idx].category = this.menuForm.category;
+                            this.menuItems[idx].price = this.menuForm.price;
+                        }
+                    } else {
+                        const newId = Date.now();
+                        this.menuItems.push({
+                            id: newId,
+                            name: this.menuForm.name,
+                            category: this.menuForm.category,
+                            price: this.menuForm.price
+                        });
+                    }
+
+                    this.saveMenuToStorage();
+                    this.showMenuModal = false;
+                },
+
+                deleteMenuItem(id) {
+                    if (confirm('Hapus menu ini?')) {
+                        this.menuItems = this.menuItems.filter(i => i.id !== id);
+                        this.saveMenuToStorage();
+                    }
+                },
+
+                exportToCSV() {
+                    if (this.transactions.length === 0) {
+                        alert('Belum ada transaksi untuk di-export.');
+                        return;
+                    }
+
+                    let csvContent = "data:text/csv;charset=utf-8,";
+                    csvContent += "No Nota,Waktu,Kasir,Pelanggan,Tipe,Metode Pembayaran,Subtotal,Diskon,Total\n";
+
+                    this.transactions.forEach(t => {
+                        csvContent += `"${t.invoiceNo}","${t.dateTime}","${t.cashierName || 'KEBOO'}","${t.customerName}","${t.orderType}","${t.paymentMethod}",${t.subtotal},${t.discount},${t.grandTotal}\n`;
+                    });
+
+                    const encodedUri = encodeURI(csvContent);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", encodedUri);
+                    link.setAttribute("download", `Laporan_Penjualan_Batari_${new Date().toISOString().slice(0,10)}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                },
+
+                formatRupiah(number) {
+                    return new Intl.NumberFormat('id-ID', {
+                        style: 'currency',
+                        currency: 'IDR',
+                        maximumFractionDigits: 0
+                    }).format(number || 0);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
